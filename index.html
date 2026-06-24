@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Noble Savage OS</title>
+  <link rel="icon" href="data:," />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1115;
+      --panel: #181c24;
+      --panel-soft: #202734;
+      --text: #f5f7fb;
+      --muted: #98a2b3;
+      --accent: #81f4a8;
+      --accent-strong: #2ddb73;
+      --warn: #ffb86b;
+      --danger: #ff7f7f;
+      --border: rgba(255, 255, 255, 0.08);
+      --shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #090b0f 0%, #121722 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: minmax(360px, 480px) 1fr;
+      gap: 20px;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .panel {
+      background: rgba(24, 28, 36, 0.88);
+      border: 1px solid var(--border);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+
+    .chat {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chat-header,
+    .board-header {
+      padding: 20px 22px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .eyebrow {
+      color: var(--accent);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1, h2 { font-size: 1.2rem; }
+
+    .subtle {
+      color: var(--muted);
+      margin-top: 8px;
+      line-height: 1.5;
+    }
+
+    .messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .message {
+      padding: 14px 16px;
+      border-radius: 18px;
+      line-height: 1.55;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+    }
+
+    .assistant { background: rgba(129, 244, 168, 0.08); }
+    .user { background: rgba(255, 255, 255, 0.04); align-self: flex-end; max-width: 92%; }
+
+    .thinking {
+      color: var(--warn);
+      font-size: 0.92rem;
+      margin-top: 8px;
+    }
+
+    .proposal {
+      margin: 0 22px 18px;
+      padding: 16px;
+      border-radius: 18px;
+      background: var(--panel-soft);
+      border: 1px solid var(--border);
+    }
+
+    .proposal strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .proposal .reason {
+      color: var(--muted);
+      margin-top: 10px;
+      font-size: 0.92rem;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+
+    button,
+    input,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button.primary { background: var(--accent-strong); color: #08110b; }
+    button.secondary { background: rgba(255,255,255,0.08); color: var(--text); }
+    button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    button.warn { background: rgba(255, 184, 107, 0.16); color: #ffd69f; }
+
+    .input-area {
+      padding: 0 22px 22px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    input, textarea {
+      width: 100%;
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 12px 14px;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+
+    .quick-options,
+    .meta,
+    .stats,
+    .brief-list,
+    .workstream-list {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .board {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .board-body {
+      padding: 18px 22px 22px;
+      overflow-y: auto;
+      display: grid;
+      gap: 18px;
+    }
+
+    .stats div,
+    .meta span {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px 12px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255,255,255,0.03);
+    }
+
+    .card h3 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 0.82rem;
+      background: rgba(129, 244, 168, 0.1);
+      color: var(--accent);
+      border: 1px solid rgba(129, 244, 168, 0.2);
+    }
+
+    .task {
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(0,0,0,0.18);
+      border: 1px solid var(--border);
+    }
+
+    .task strong {
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .danger {
+      color: var(--danger);
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    .summary {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(129, 244, 168, 0.2);
+      background: rgba(129, 244, 168, 0.08);
+    }
+
+    details {
+      margin-top: 10px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 960px) {
+      .app {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="panel chat">
+      <div class="chat-header">
+        <span class="eyebrow">OnboardBot</span>
+        <h1>Noble Savage OS</h1>
+        <p class="subtle">Conversational onboarding, editable proposals, resumable state, and a live command center.</p>
+      </div>
+      <div id="messages" class="messages"></div>
+      <div id="proposal" class="proposal" hidden></div>
+      <div class="input-area">
+        <div id="quickOptions" class="quick-options"></div>
+        <div class="input-row">
+          <input id="answerInput" placeholder="Answer the one question on screen…" autocomplete="off" />
+          <button id="submitButton" class="primary">Propose</button>
+        </div>
+        <div class="controls">
+          <button id="sampleButton" class="secondary" type="button">Use sample answers</button>
+          <button id="resumeButton" class="ghost" type="button">Recap progress</button>
+          <button id="resetButton" class="ghost" type="button">Reset prototype</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel board">
+      <div class="board-header">
+        <span class="eyebrow">Command Center</span>
+        <h2>Live board</h2>
+        <p class="subtle">The board fills as each proposal is confirmed.</p>
+      </div>
+      <div class="board-body">
+        <div id="stats" class="stats"></div>
+        <div id="countdown" class="summary"></div>
+        <div id="brief" class="summary"></div>
+        <div id="workstreams" class="workstream-list"></div>
+        <div class="card">
+          <h3>Agent roster</h3>
+          <p class="subtle">OnboardBot, FinExtract, ComplianceGuard, BankerPack, FundingRouter, Noble Savage</p>
+        </div>
+        <div class="card">
+          <h3>API + schema handoff</h3>
+          <p class="subtle">See <code>schema.sql</code> for the minimum tables and <code>AGENTS.md</code> for the required prompt contracts and API surface.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const SAMPLE_STREAMS = [
+      "Trust execution",
+      "BBA client growth",
+      "Creative IP protection",
+      "NEMT acquisitions",
+      "Sovereignty petition",
+      "Personal operations"
+    ];
+
+    const STORAGE = {
+      dbName: "noble-savage-os",
+      storeName: "state",
+      async open() {
+        if (this.db) return this.db;
+        this.db = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(this.dbName, 1);
+          request.onupgradeneeded = () => request.result.createObjectStore(this.storeName);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        return this.db;
+      },
+      async get(key) {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(this.storeName, "readonly");
+          const request = tx.objectStore(this.storeName).get(key);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      },
+      async set(key, value) {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(this.storeName, "readwrite");
+          const request = tx.objectStore(this.storeName).put(value, key);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      },
+      async clear() {
+        const db = await this.open();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(this.storeName, "readwrite");
+          const request = tx.objectStore(this.storeName).clear();
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
+    };
+
+    const initialState = () => ({
+      workstreams: [],
+      tasks: [],
+      signals: [],
+      decisions: [],
+      onboarding: {
+        step: "orient",
+        complete: false,
+        currentIndex: 0,
+        detailField: "name"
+      },
+      preferences: {
+        briefTime: "08:00",
+        pushiness: ""
+      },
+      summary: {
+        morningBrief: "",
+        chokepointTaskId: "",
+        countdownStartedAt: new Date().toISOString()
+      }
+    });
+
+    const colors = ["#81f4a8", "#88c3ff", "#f6d365", "#ff9f9f", "#c7a4ff", "#7ce8ff"];
+    const messagesEl = document.getElementById("messages");
+    const proposalEl = document.getElementById("proposal");
+    const answerInput = document.getElementById("answerInput");
+    const submitButton = document.getElementById("submitButton");
+    const sampleButton = document.getElementById("sampleButton");
+    const resumeButton = document.getElementById("resumeButton");
+    const resetButton = document.getElementById("resetButton");
+    const quickOptionsEl = document.getElementById("quickOptions");
+    const statsEl = document.getElementById("stats");
+    const countdownEl = document.getElementById("countdown");
+    const briefEl = document.getElementById("brief");
+    const workstreamsEl = document.getElementById("workstreams");
+
+    let state = initialState();
+    let draftText = "";
+    let currentProposal = null;
+    let lastPromptText = "";
+
+    const guid = () => crypto.randomUUID();
+    const escapeHtml = (value = "") => String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+    const tierFromText = (text = "") => {
+      const lower = text.toLowerCase();
+      if (/(urgent|critical|asap|trust|ein|lawsuit|deadline|notary|today)/.test(lower)) return "Tier 1";
+      if (/(growth|revenue|client|launch|important|soon|partner)/.test(lower)) return "Tier 2";
+      return "Tier 3";
+    };
+
+    const prioFromText = (text = "") => {
+      const lower = text.toLowerCase();
+      if (/(unblock|critical|today|trust|ein|urgent)/.test(lower)) return "P1";
+      if (/(soon|important|client|launch)/.test(lower)) return "P2";
+      return "P3";
+    };
+
+    const chokepointText = "Sign + notarize the House of Day Express Trust. File SS-4 (EIN) same day.";
+
+    const promptFor = () => {
+      const { onboarding } = state;
+      if (onboarding.complete) {
+        return {
+          text: "Onboarding is complete. Use recap to review the board or reset to start a new run.",
+          options: []
+        };
+      }
+
+      if (onboarding.step === "orient") {
+        return {
+          text: "I'm going to ask you one question at a time and build your board as we go. You'll see it fill in on the right. Start with the first workstream: what's one of the 6 things your life is actually organized around right now?",
+          options: ["Trust execution", "BBA client growth", "Personal operations"]
+        };
+      }
+
+      if (onboarding.step === "workstream") {
+        const count = onboarding.currentIndex + 1;
+        const current = state.workstreams[onboarding.currentIndex];
+        const name = current?.name || `workstream ${count}`;
+        if (onboarding.detailField === "name") {
+          return {
+            text: `Workstream ${count} of 6: what's the name of this lane?`,
+            options: SAMPLE_STREAMS.filter((stream) => !state.workstreams.some((item) => item.name === stream)).slice(0, 4)
+          };
+        }
+        if (onboarding.detailField === "objective") {
+          return {
+            text: `${name}: what's the objective here?`,
+            options: ["Get it signed this week", "Move one deal to close", "Create a repeatable operating rhythm"]
+          };
+        }
+        if (onboarding.detailField === "task") {
+          return {
+            text: `${name}: what's the single most important open task?`,
+            options: ["Schedule the notary", "Send the follow-up", "Finish the draft and ship it"]
+          };
+        }
+        if (onboarding.detailField === "blocked") {
+          return {
+            text: `${name}: what's blocked right now?`,
+            options: ["Waiting on paperwork", "Need a decision", "Not blocked"]
+          };
+        }
+        return {
+          text: `${name}: who else touches this?`,
+          options: ["Just me", "Lawyer + me", "Ops partner + me"]
+        };
+      }
+
+      if (onboarding.step === "chokepoint") {
+        return {
+          text: "What's the one thing that, if it got done, unblocks the most other things?",
+          options: state.tasks.slice(0, 4).map((task) => task.task)
+        };
+      }
+
+      if (onboarding.step === "brief-time") {
+        return {
+          text: "When do you want your morning brief? Use HH:MM.",
+          options: ["07:00", "08:00", "09:00"]
+        };
+      }
+
+      if (onboarding.step === "pushiness") {
+        return {
+          text: "How pushy should I be?",
+          options: ["Quiet", "Balanced", "Relentless"]
+        };
+      }
+
+      return {
+        text: "Review the board, then generate Brief #1 and start the countdown.",
+        options: ["Generate Brief #1"]
+      };
+    };
+
+    const logMessage = (role, text) => {
+      const el = document.createElement("div");
+      el.className = `message ${role}`;
+      el.textContent = text;
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    };
+
+    const logThinking = (text) => {
+      const el = document.createElement("div");
+      el.className = "thinking";
+      el.textContent = text;
+      messagesEl.appendChild(el);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    };
+
+    const saveState = async () => STORAGE.set("app-state", state);
+
+    const addSignal = (kind, target, before = "", after = "", notes = "") => {
+      state.signals.push({
+        id: guid(),
+        ts: new Date().toISOString(),
+        kind,
+        target,
+        before,
+        after,
+        agent: "OnboardBot",
+        notes
+      });
+    };
+
+    const trapWarning = (text) => {
+      if (!/(feature|framework|agent|prompt)/i.test(text)) return "";
+      return "Trap flagged: this sounds like adding architecture before trust execution and 5 paid BBA clients. Ship the chokepoint instead.";
+    };
+
+    const buildProposal = (answer) => {
+      const { onboarding } = state;
+      if (onboarding.step === "orient") onboarding.step = "workstream";
+
+      if (onboarding.step === "workstream" && onboarding.detailField === "name") {
+        const proposal = {
+          kind: "workstream",
+          label: `Add workstream ${state.workstreams.length + 1}`,
+          preview: `Name: ${answer}\nTier: ${tierFromText(answer)}\nWhy: ${trapWarning(answer) || "Inferred from urgency and stakes in the wording."}`,
+          reason: `Sounds like ${tierFromText(answer).toLowerCase()}, based on how urgent and consequential it reads.`,
+          apply() {
+            state.workstreams.push({
+              id: answer.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || guid(),
+              name: answer,
+              tier: tierFromText(answer),
+              owner: "Noble",
+              objective: "",
+              why: "",
+              color: colors[state.workstreams.length % colors.length],
+              blocked: "",
+              collaborators: ""
+            });
+            state.onboarding.step = "workstream";
+            state.onboarding.detailField = "objective";
+          }
+        };
+        return proposal;
+      }
+
+      const current = state.workstreams[state.onboarding.currentIndex];
+      if (!current) return null;
+
+      if (onboarding.step === "workstream" && onboarding.detailField === "objective") {
+        return {
+          kind: "objective",
+          label: `Set objective for ${current.name}`,
+          preview: `Objective: ${answer}\nPlain-language inference: ${current.tier} because this feels ${current.tier === "Tier 1" ? "urgent and blocking" : "material but not existential"}.\n`,
+          reason: "Objectives are stored on the workstream so the board becomes legible before the interview ends.",
+          apply() {
+            current.objective = answer;
+            current.why = `Objective captured during onboarding for ${current.name}.`;
+            state.onboarding.detailField = "task";
+          }
+        };
+      }
+
+      if (onboarding.step === "workstream" && onboarding.detailField === "task") {
+        return {
+          kind: "task",
+          label: `Create priority task for ${current.name}`,
+          preview: `Task: ${answer}\nPriority: ${prioFromText(answer)}\nStatus: This Week`,
+          reason: "The single most important open task becomes the first row visible in the command center.",
+          apply() {
+            const task = {
+              id: guid(),
+              ws: current.id,
+              task: answer,
+              prio: prioFromText(answer),
+              status: "This Week",
+              owner: "Noble",
+              notes: trapWarning(answer),
+              deleg: "",
+              bot: "OnboardBot"
+            };
+            state.tasks.push(task);
+            state.onboarding.detailField = "blocked";
+          }
+        };
+      }
+
+      if (onboarding.step === "workstream" && onboarding.detailField === "blocked") {
+        return {
+          kind: "blocker",
+          label: `Record blocker for ${current.name}`,
+          preview: `Blocker: ${answer}\nStatus inference: ${/not blocked/i.test(answer) ? "This Week" : "Blocked"}`,
+          reason: "Capturing blockers lets the system surface what matters before you ask.",
+          apply() {
+            current.blocked = answer;
+            const latestTask = state.tasks.filter((task) => task.ws === current.id).slice(-1)[0];
+            if (latestTask) latestTask.status = /not blocked/i.test(answer) ? "This Week" : "Blocked";
+            state.onboarding.detailField = "collaborators";
+          }
+        };
+      }
+
+      if (onboarding.step === "workstream" && onboarding.detailField === "collaborators") {
+        return {
+          kind: "collaborators",
+          label: `Attach collaborators to ${current.name}`,
+          preview: `Who touches it: ${answer}`,
+          reason: "Ownership context is required so the board can coordinate beyond a solo to-do list.",
+          apply() {
+            current.collaborators = answer;
+            const isLast = state.onboarding.currentIndex >= 5;
+            if (isLast) {
+              state.onboarding.step = "chokepoint";
+              state.onboarding.detailField = "done";
+            } else {
+              state.onboarding.currentIndex += 1;
+              state.onboarding.detailField = "name";
+            }
+          }
+        };
+      }
+
+      if (onboarding.step === "chokepoint") {
+        return {
+          kind: "chokepoint",
+          label: "Pin the chokepoint",
+          preview: `Chokepoint: ${answer}\nIt will be pinned P1 and shown first in the Morning Brief.`,
+          reason: "The chokepoint is the single item that unblocks the most other things, so it must anchor future briefs.",
+          apply() {
+            const task = state.tasks.find((item) => item.task === answer) || state.tasks[0];
+            if (task) {
+              task.prio = "P1";
+              task.notes = [task.notes, `Chokepoint pinned: ${chokepointText}`].filter(Boolean).join(" ");
+              state.summary.chokepointTaskId = task.id;
+              state.decisions.push({
+                id: guid(),
+                ts: new Date().toISOString(),
+                prompt: "What unblocks the most?",
+                recommendation: { chokepoint: task.task },
+                actual_action: "Pinned to future briefs",
+                status: "IN MOTION",
+                week_of: new Date().toISOString().slice(0, 10)
+              });
+            }
+            state.onboarding.step = "brief-time";
+          }
+        };
+      }
+
+      if (onboarding.step === "brief-time") {
+        return {
+          kind: "brief-time",
+          label: "Set morning brief time",
+          preview: `Morning brief: ${answer}`,
+          reason: "Cadence needs a concrete time so the assistant can act proactively within approved bounds.",
+          apply() {
+            state.preferences.briefTime = answer;
+            state.onboarding.step = "pushiness";
+          }
+        };
+      }
+
+      if (onboarding.step === "pushiness") {
+        return {
+          kind: "pushiness",
+          label: "Set proactive guardrails",
+          preview: `Pushiness: ${answer}\nQuiet hours: 9pm–7am. Max 5 pushes/day excluding the Morning Brief.`,
+          reason: "Guardrails keep initiative useful instead of noisy.",
+          apply() {
+            state.preferences.pushiness = answer;
+            state.onboarding.step = "launch";
+          }
+        };
+      }
+
+      return {
+        kind: "launch",
+        label: "Generate first brief",
+        preview: "Generate Morning Brief #1 and start the trust execution countdown.",
+        reason: "The onboarding must end in a real artifact, not a summary.",
+        apply() {
+          generateBrief();
+          state.onboarding.complete = true;
+        }
+      };
+    };
+
+    const generateBrief = () => {
+      const pinned = state.tasks.find((task) => task.id === state.summary.chokepointTaskId) || state.tasks[0];
+      const blocked = state.tasks.filter((task) => task.status === "Blocked").map((task) => `• ${task.task}`).join("\n") || "• Nothing is blocked right now.";
+      state.summary.morningBrief = [
+        `Trust execution: ${daysLeft()} days from "this week".`,
+        pinned ? `Top move: ${pinned.task}` : "Top move: define the chokepoint.",
+        `Blocked:\n${blocked}`,
+        "Single most important thing to actually do: move the chokepoint today, and stop avoiding the one decision that unlocks the rest."
+      ].join("\n\n");
+    };
+
+    const daysLeft = () => {
+      const start = new Date(state.summary.countdownStartedAt);
+      const elapsed = Math.floor((Date.now() - start.getTime()) / 86400000);
+      return Math.max(0, 14 - elapsed);
+    };
+
+    const renderQuickOptions = () => {
+      quickOptionsEl.innerHTML = "";
+      const prompt = promptFor();
+      prompt.options.forEach((option) => {
+        const button = document.createElement("button");
+        button.className = "secondary";
+        button.type = "button";
+        button.textContent = option;
+        button.addEventListener("click", () => {
+          answerInput.value = option;
+          submitAnswer(option);
+        });
+        quickOptionsEl.appendChild(button);
+      });
+    };
+
+    const renderProposal = () => {
+      proposalEl.hidden = !currentProposal;
+      if (!currentProposal) return;
+      proposalEl.innerHTML = "";
+      const title = document.createElement("strong");
+      title.textContent = currentProposal.label;
+      const preview = document.createElement("div");
+      preview.textContent = currentProposal.preview;
+      const reason = document.createElement("div");
+      reason.className = "reason";
+      reason.textContent = `Why: ${currentProposal.reason}`;
+      const controls = document.createElement("div");
+      controls.className = "controls";
+
+      const accept = document.createElement("button");
+      accept.className = "primary";
+      accept.textContent = "Accept";
+      accept.addEventListener("click", async () => {
+        currentProposal.apply();
+        addSignal("accept", currentProposal.kind, "", currentProposal.preview, currentProposal.reason);
+        logMessage("assistant", `Added.\n${currentProposal.preview}`);
+        currentProposal = null;
+        answerInput.value = "";
+        logThinking("Updating board and loading the next question…");
+        if (state.onboarding.step === "launch") {
+          currentProposal = buildProposal("Generate Brief #1");
+          renderProposal();
+        }
+        await saveState();
+        render();
+        if (!currentProposal) {
+          const nextPrompt = promptFor().text;
+          if (nextPrompt !== lastPromptText) {
+            logMessage("assistant", nextPrompt);
+            lastPromptText = nextPrompt;
+          }
+        }
+      });
+
+      const edit = document.createElement("button");
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", async () => {
+        addSignal("edit", currentProposal.kind, currentProposal.preview, draftText, "User edited the proposal before commit.");
+        answerInput.value = draftText;
+        currentProposal = null;
+        await saveState();
+        renderProposal();
+      });
+
+      const dismiss = document.createElement("button");
+      dismiss.className = "warn";
+      dismiss.textContent = "Dismiss";
+      dismiss.addEventListener("click", async () => {
+        addSignal("dismiss", currentProposal.kind, currentProposal.preview, "", "Proposal dismissed.");
+        currentProposal = null;
+        logMessage("assistant", "Got it. I won't save that. Give me the sharper version.");
+        await saveState();
+        renderProposal();
+      });
+
+      const why = document.createElement("button");
+      why.className = "ghost";
+      why.textContent = "Why?";
+      why.addEventListener("click", () => {
+        reason.hidden = !reason.hidden;
+      });
+
+      controls.append(accept, edit, dismiss, why);
+      proposalEl.append(title, preview, controls, reason);
+      reason.hidden = true;
+    };
+
+    const renderBoard = () => {
+      const blocked = state.tasks.filter((task) => task.status === "Blocked").length;
+      const openP1 = state.tasks.filter((task) => task.prio === "P1" && task.status !== "Done").length;
+      statsEl.innerHTML = `
+        <div>This Week: ${state.tasks.filter((task) => task.status === "This Week").length}</div>
+        <div>In Progress: ${state.tasks.filter((task) => task.status === "In Progress").length}</div>
+        <div>Blocked: ${blocked}</div>
+        <div>Open P1: ${openP1}</div>
+        <div>Signals: ${state.signals.length}</div>
+      `;
+
+      countdownEl.innerHTML = `
+        <h3>Trust-execution countdown</h3>
+        <p class="subtle">${daysLeft()} days left from “this week.” The chokepoint is pinned until trust + EIN move.</p>
+      `;
+
+      briefEl.innerHTML = `
+        <h3>Morning Brief #1</h3>
+        <p class="subtle">${state.summary.morningBrief ? escapeHtml(state.summary.morningBrief).replace(/\n/g, "<br />") : "Complete onboarding to generate the first brief."}</p>
+      `;
+
+      workstreamsEl.innerHTML = "";
+      if (!state.workstreams.length) {
+        const empty = document.createElement("div");
+        empty.className = "card";
+        empty.innerHTML = "<h3>Blank board</h3><p class='subtle'>The command center populates as proposals are accepted.</p>";
+        workstreamsEl.appendChild(empty);
+        return;
+      }
+
+      state.workstreams.forEach((ws) => {
+        const task = state.tasks.find((item) => item.ws === ws.id);
+        const isChokepoint = task && task.id === state.summary.chokepointTaskId;
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <span class="pill">${ws.tier}${isChokepoint ? " · Chokepoint" : ""}</span>
+          <h3>${escapeHtml(ws.name)}</h3>
+          <p class="subtle">${escapeHtml(ws.objective || "Objective pending confirmation.")}</p>
+          <div class="meta">
+            <span>Owner: ${escapeHtml(ws.owner)}</span>
+            <span>Touches it: ${escapeHtml(ws.collaborators || "TBD")}</span>
+            <span>Blocked by: ${escapeHtml(ws.blocked || "TBD")}</span>
+          </div>
+          ${task ? `
+            <div class="task">
+              <strong>${escapeHtml(task.task)}</strong>
+              <div class="meta">
+                <span>${task.prio}</span>
+                <span>${task.status}</span>
+              </div>
+              ${task.notes ? `<p class="danger">${escapeHtml(task.notes)}</p>` : ""}
+            </div>
+          ` : ""}
+          <details>
+            <summary>Why?</summary>
+            ${escapeHtml(ws.why || "Captured during onboarding to keep the board legible and resumable.")}
+          </details>
+        `;
+        workstreamsEl.appendChild(card);
+      });
+    };
+
+    const renderPrompt = () => {
+      const prompt = promptFor();
+      if (!messagesEl.childElementCount) {
+        logMessage("assistant", prompt.text);
+        lastPromptText = prompt.text;
+      }
+      renderQuickOptions();
+      answerInput.placeholder = prompt.text;
+    };
+
+    const recap = () => {
+      const count = state.workstreams.length;
+      if (!count) {
+        logMessage("assistant", "No state yet. Start with the first workstream and I’ll build the board as we go.");
+        return;
+      }
+      const next = promptFor().text;
+      logMessage("assistant", `Recap: I already have ${count} workstream${count === 1 ? "" : "s"} and ${state.tasks.length} priority task${state.tasks.length === 1 ? "" : "s"}.\nNext gap: ${next}`);
+    };
+
+    const render = () => {
+      renderPrompt();
+      renderProposal();
+      renderBoard();
+    };
+
+    const submitAnswer = async (value = answerInput.value.trim()) => {
+      if (!value) return;
+      draftText = value;
+      logMessage("user", value);
+      currentProposal = buildProposal(value);
+      if (!currentProposal) return;
+      await saveState();
+      renderProposal();
+    };
+
+    submitButton.addEventListener("click", () => submitAnswer());
+    answerInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        submitAnswer();
+      }
+    });
+
+    sampleButton.addEventListener("click", async () => {
+      const prompt = promptFor();
+      const option = prompt.options[0] || "Generate Brief #1";
+      answerInput.value = option;
+      await submitAnswer(option);
+    });
+
+    resumeButton.addEventListener("click", recap);
+
+    resetButton.addEventListener("click", async () => {
+      state = initialState();
+      currentProposal = null;
+      draftText = "";
+      messagesEl.innerHTML = "";
+      await STORAGE.clear();
+      render();
+    });
+
+    (async () => {
+      const saved = await STORAGE.get("app-state");
+      if (saved) {
+        state = saved;
+      }
+      render();
+      if (saved && (saved.workstreams?.length || saved.tasks?.length)) {
+        recap();
+      }
+    })();
+  </script>
+</body>
+</html>
