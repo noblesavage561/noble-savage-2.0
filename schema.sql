@@ -1,5 +1,3 @@
-create extension if not exists pgcrypto;
-
 create table if not exists workstreams (
   id text primary key,
   name text not null,

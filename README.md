@@ -10,4 +10,4 @@ Prototype for Noble Savage OS onboarding and command center.
 
 ## Run
 
-Open `/home/runner/work/noble-savage-2.0/noble-savage-2.0/index.html` in a browser.
+Open `./index.html` in a browser.
