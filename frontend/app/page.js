@@ -5,11 +5,10 @@ import { useEffect, useState } from "react";
 import AssistantPanel from "../components/AssistantPanel";
 import OnboardingPanel from "../components/OnboardingPanel";
 import TaskBoard from "../components/TaskBoard";
-
-const CONFIGURED_API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+import { resolveApiBase, resolveApiConfigWarning } from "../lib/apiBase";
 
 export default function Home() {
-  const [apiBase, setApiBase] = useState("http://localhost:8000");
+  const [apiBase, setApiBase] = useState("");
   const [configWarning, setConfigWarning] = useState("");
   const [token, setToken] = useState("");
   const [mode, setMode] = useState("login");
@@ -22,17 +21,8 @@ export default function Home() {
     const existing = window.localStorage.getItem("ns_access_token") || "";
     setToken(existing);
 
-    if (CONFIGURED_API_BASE) {
-      setApiBase(CONFIGURED_API_BASE.replace(/\/$/, ""));
-      return;
-    }
-
-    const runningLocally = ["localhost", "127.0.0.1"].includes(window.location.hostname);
-    if (!runningLocally) {
-      setConfigWarning(
-        "NEXT_PUBLIC_API_URL is not configured. Set it to your Railway backend public URL so this link works outside local development."
-      );
-    }
+    setApiBase(resolveApiBase());
+    setConfigWarning(resolveApiConfigWarning(window.location.hostname));
   }, []);
 
   async function submitAuth(e) {
