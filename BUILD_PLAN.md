@@ -24,6 +24,17 @@ Done when:
 - Backend reads/writes from Postgres.
 - Local and hosted environments use env-driven DB URLs.
 
+### Slice 2: Reliability and quality floor
+
+- Add backend API test coverage for auth, tasks, onboarding, signals, and websocket auth.
+- Add frontend critical-path test coverage for auth, onboarding turns, and task updates.
+- Standardize API error messaging and session-expiration handling in UI.
+
+Done when:
+
+- Test suite runs in one command and covers the core authenticated flows.
+- UI surfaces actionable errors for network, API, and token-expiry failures.
+
 ### Slice 3: Morning Brief and cadence
 
 - Add daily brief generator endpoint.

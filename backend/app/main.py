@@ -6,7 +6,13 @@ from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .auth import create_access_token, decode_access_token, hash_password, verify_password
+from .auth import (
+    create_access_token,
+    decode_access_token,
+    hash_password,
+    validate_auth_config,
+    verify_password,
+)
 from .assistant_service import query_openrouter
 from .onboarding import handle_turn
 from .schemas import (
@@ -83,7 +89,7 @@ security = HTTPBearer()
 
 
 def _parse_origins() -> list[str]:
-    raw = os.getenv("CORS_ALLOW_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+    raw = os.getenv("FRONTEND_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
@@ -102,6 +108,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
+    validate_auth_config()
     init_db()
 
 

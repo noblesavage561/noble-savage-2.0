@@ -2,37 +2,65 @@
 
 import { useEffect, useState } from "react";
 
-export default function OnboardingPanel({ token, apiBase }) {
+export default function OnboardingPanel({ token, apiBase, onAuthExpired }) {
   const [turn, setTurn] = useState(null);
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
   async function sendTurn(nextAnswer = null) {
     if (!token) return;
     setLoading(true);
-    const res = await fetch(`${apiBase}/api/onboarding/turn`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...authHeaders },
-      body: JSON.stringify({ answer: nextAnswer }),
-    });
-    if (res.ok) {
+    setError("");
+    try {
+      const res = await fetch(`${apiBase}/api/onboarding/turn`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ answer: nextAnswer }),
+      });
+      if (res.status === 401) {
+        onAuthExpired?.();
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.detail || "Could not continue onboarding.");
+        return;
+      }
       const data = await res.json();
       setTurn(data);
       setAnswer("");
+    } catch {
+      setError("Could not continue onboarding.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   async function resetFlow() {
     if (!token) return;
     setLoading(true);
-    await fetch(`${apiBase}/api/onboarding/reset`, {
-      method: "POST",
-      headers: { ...authHeaders },
-    });
-    setLoading(false);
-    sendTurn(null);
+    setError("");
+    try {
+      const res = await fetch(`${apiBase}/api/onboarding/reset`, {
+        method: "POST",
+        headers: { ...authHeaders },
+      });
+      if (res.status === 401) {
+        onAuthExpired?.();
+        return;
+      }
+      if (!res.ok) {
+        setError("Could not reset onboarding.");
+        return;
+      }
+      await sendTurn(null);
+    } catch {
+      setError("Could not reset onboarding.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -54,7 +82,8 @@ export default function OnboardingPanel({ token, apiBase }) {
         </button>
       </div>
 
-      <p className="notice">One question at a time. Confirm proposals before write.</p>
+      <p className="notice">I will guide this step by step. Review and confirm proposals before saving.</p>
+      {error ? <p style={{ color: "#dc2626" }}>{error}</p> : null}
 
       {turn ? (
         <>
@@ -85,7 +114,7 @@ export default function OnboardingPanel({ token, apiBase }) {
           ) : null}
         </>
       ) : (
-        <p className="notice">Starting onboarding...</p>
+        <p className="notice">Loading your onboarding state...</p>
       )}
 
       <form onSubmit={onSubmit} className="controls" style={{ marginTop: 10 }}>
@@ -94,17 +123,20 @@ export default function OnboardingPanel({ token, apiBase }) {
           onChange={(e) => setAnswer(e.target.value)}
           placeholder="Your answer"
           style={{ flex: 1, minWidth: 220 }}
+          disabled={loading}
         />
         <button className="primary" type="submit" disabled={loading}>
-          Send
+          {loading ? "Sending..." : "Send"}
         </button>
       </form>
 
       <div className="controls" style={{ marginTop: 8 }}>
         <button onClick={() => sendTurn("yes")} disabled={loading}>
-          Confirm
+          Looks good
         </button>
-        <button onClick={() => sendTurn("revise")}>Revise</button>
+        <button onClick={() => sendTurn("revise")} disabled={loading}>
+          Let me edit
+        </button>
       </div>
     </section>
   );

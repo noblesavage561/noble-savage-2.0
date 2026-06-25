@@ -1,34 +1,36 @@
 from datetime import datetime, date
+import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 TaskPriority = Literal["P1", "P2", "P3"]
 TaskStatus = Literal["Backlog", "This Week", "In Progress", "Blocked", "Done"]
 SignalKind = Literal["accept", "edit", "dismiss", "correct", "gap"]
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 class TaskCreate(BaseModel):
-    ws: str
-    task: str = Field(min_length=1)
+    ws: str = Field(min_length=1, max_length=120)
+    task: str = Field(min_length=1, max_length=300)
     prio: TaskPriority = "P2"
     status: TaskStatus = "Backlog"
-    owner: str | None = None
-    notes: str | None = None
-    deleg: str | None = None
-    bot: str | None = None
+    owner: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=2000)
+    deleg: str | None = Field(default=None, max_length=300)
+    bot: str | None = Field(default=None, max_length=120)
     due: date | None = None
 
 
 class TaskPatch(BaseModel):
-    task: str | None = None
+    task: str | None = Field(default=None, min_length=1, max_length=300)
     prio: TaskPriority | None = None
     status: TaskStatus | None = None
-    owner: str | None = None
-    notes: str | None = None
-    deleg: str | None = None
-    bot: str | None = None
+    owner: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=2000)
+    deleg: str | None = Field(default=None, max_length=300)
+    bot: str | None = Field(default=None, max_length=120)
     due: date | None = None
 
 
@@ -49,11 +51,11 @@ class TaskOut(BaseModel):
 
 class SignalCreate(BaseModel):
     kind: SignalKind
-    target: str | None = None
-    before: str | None = None
-    after: str | None = None
-    agent: str | None = None
-    notes: str | None = None
+    target: str | None = Field(default=None, max_length=120)
+    before: str | None = Field(default=None, max_length=4000)
+    after: str | None = Field(default=None, max_length=4000)
+    agent: str | None = Field(default=None, max_length=120)
+    notes: str | None = Field(default=None, max_length=1000)
 
 
 class OnboardingState(BaseModel):
@@ -63,7 +65,7 @@ class OnboardingState(BaseModel):
 
 
 class OnboardingTurnIn(BaseModel):
-    answer: str | None = None
+    answer: str | None = Field(default=None, max_length=2000)
 
 
 class OnboardingTurnOut(BaseModel):
@@ -77,13 +79,29 @@ class OnboardingTurnOut(BaseModel):
 
 class AuthRegisterIn(BaseModel):
     email: str
-    password: str = Field(min_length=8)
-    name: str | None = None
+    password: str = Field(min_length=8, max_length=256)
+    name: str | None = Field(default=None, max_length=120)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        email = value.strip().lower()
+        if not EMAIL_RE.match(email):
+            raise ValueError("Invalid email")
+        return email
 
 
 class AuthLoginIn(BaseModel):
     email: str
-    password: str
+    password: str = Field(min_length=1, max_length=256)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        email = value.strip().lower()
+        if not EMAIL_RE.match(email):
+            raise ValueError("Invalid email")
+        return email
 
 
 class AuthTokenOut(BaseModel):
@@ -112,10 +130,21 @@ class MessageOut(BaseModel):
 
 
 class KnowledgeIn(BaseModel):
-    title: str = Field(min_length=1)
-    content: str = Field(min_length=1)
-    source: str | None = None
-    tags: list[str] = Field(default_factory=list)
+    title: str = Field(min_length=1, max_length=200)
+    content: str = Field(min_length=1, max_length=10000)
+    source: str | None = Field(default=None, max_length=300)
+    tags: list[str] = Field(default_factory=list, max_length=30)
+
+    @field_validator("tags")
+    @classmethod
+    def normalize_tags(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for raw in values:
+            tag = raw.strip().lower()
+            if not tag:
+                continue
+            cleaned.append(tag[:40])
+        return cleaned
 
 
 class KnowledgeOut(BaseModel):
@@ -128,7 +157,7 @@ class KnowledgeOut(BaseModel):
 
 
 class AssistantQueryIn(BaseModel):
-    question: str = Field(min_length=1)
+    question: str = Field(min_length=1, max_length=2000)
 
 
 class AssistantQueryOut(BaseModel):

@@ -5,10 +5,39 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 import jwt
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-only-change-me")
+
+DEFAULT_JWT_SECRET = "dev-only-change-me"
 JWT_ALG = "HS256"
-TOKEN_TTL_MINUTES = int(os.getenv("TOKEN_TTL_MINUTES", "720"))
+DEFAULT_TOKEN_TTL_MINUTES = 720
 PWD_ITERATIONS = 390000
+
+
+def _token_ttl_minutes() -> int:
+    raw = os.getenv("TOKEN_TTL_MINUTES", str(DEFAULT_TOKEN_TTL_MINUTES)).strip()
+    try:
+        ttl = int(raw)
+    except ValueError as exc:
+        raise RuntimeError("TOKEN_TTL_MINUTES must be an integer") from exc
+    if ttl <= 0:
+        raise RuntimeError("TOKEN_TTL_MINUTES must be greater than 0")
+    return ttl
+
+
+def _jwt_secret() -> str:
+    return os.getenv("JWT_SECRET", DEFAULT_JWT_SECRET)
+
+
+def validate_auth_config() -> None:
+    env = os.getenv("APP_ENV", os.getenv("ENV", "development")).strip().lower()
+    secret = _jwt_secret()
+
+    if env in {"production", "prod"}:
+        if secret == DEFAULT_JWT_SECRET:
+            raise RuntimeError("JWT_SECRET must be set in production")
+        if len(secret) < 32:
+            raise RuntimeError("JWT_SECRET must be at least 32 characters in production")
+
+    _token_ttl_minutes()
 
 
 def hash_password(password: str) -> str:
@@ -34,15 +63,15 @@ def verify_password(password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(user_id: str, email: str) -> str:
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_TTL_MINUTES)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=_token_ttl_minutes())
     payload = {
         "sub": user_id,
         "email": email,
         "exp": expires_at,
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+    return jwt.encode(payload, _jwt_secret(), algorithm=JWT_ALG)
 
 
 def decode_access_token(token: str) -> dict:
-    return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+    return jwt.decode(token, _jwt_secret(), algorithms=[JWT_ALG])
