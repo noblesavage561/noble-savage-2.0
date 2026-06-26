@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python312", "python312Packages.pip"]
+nixPkgs = ["python312", "python312Packages.pip", "tesseract"]
 
 [phases.install]
 cmds = ["pip install --break-system-packages -r requirements.txt"]
