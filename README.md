@@ -124,6 +124,13 @@ source .venv/bin/activate
 python scripts/smoke_auth_flow.py
 ```
 
+Run full local+production diagnostic sweep:
+
+```bash
+chmod +x scripts/full_diagnostic.sh
+./scripts/full_diagnostic.sh
+```
+
 ## Railway Deployment Checklist
 
 Detailed copy-paste variable matrix: `RAILWAY_ENV_MATRIX.md`.

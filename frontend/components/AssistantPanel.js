@@ -112,6 +112,41 @@ function refineQuestionText(raw) {
   ].join("\n");
 }
 
+function getPromptCoach(raw) {
+  const input = raw.trim();
+  if (!input) {
+    return {
+      needed: true,
+      reason: "Start with a clear objective and constraints to get higher-quality answers.",
+      recommended: ["decision-brief", "execution-plan"],
+    };
+  }
+
+  const lowered = input.toLowerCase();
+  const shortQuery = input.length < 40;
+  const vagueLead = /^(help|thoughts|ideas|what should i do|advice|fix this)/.test(lowered);
+  const missingStructure = !/(goal|objective|context|constraints|output|deadline|owner)/.test(lowered);
+
+  let recommended = ["decision-brief", "execution-plan"];
+  if (/(pdf|docx|document|ingest|knowledge|upload)/.test(lowered)) {
+    recommended = ["ingestion-qa", "retrieval-optimizer"];
+  } else if (/(code|bug|trace|module|repo|function|stack)/.test(lowered)) {
+    recommended = ["code-context-map", "pre-mortem"];
+  } else if (/(meeting|stakeholder|pitch|client|outreach|email)/.test(lowered)) {
+    recommended = ["meeting-prep", "outreach-draft"];
+  }
+
+  if (shortQuery || vagueLead || missingStructure) {
+    return {
+      needed: true,
+      reason: "This prompt looks under-specified. Add goal, context, constraints, and desired output format.",
+      recommended,
+    };
+  }
+
+  return { needed: false, reason: "", recommended: [] };
+}
+
 export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
   const [knowledge, setKnowledge] = useState([]);
   const [title, setTitle] = useState("");
@@ -133,6 +168,7 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
   const [loadingKnowledge, setLoadingKnowledge] = useState(false);
   const [addingKnowledge, setAddingKnowledge] = useState(false);
   const [loading, setLoading] = useState(false);
+  const promptCoach = getPromptCoach(question);
 
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
 
@@ -458,6 +494,39 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
           Improve wording
         </button>
       </form>
+
+      {promptCoach.needed ? (
+        <article className="task-row" style={{ marginTop: 8 }}>
+          <strong>Prompt coach</strong>
+          <div className="notice">{promptCoach.reason}</div>
+          <div className="controls" style={{ marginTop: 6 }}>
+            {promptCoach.recommended.map((id) => {
+              const template = PROMPT_TEMPLATES.find((t) => t.id === id);
+              if (!template) return null;
+              return (
+                <button
+                  key={`coach-${template.id}`}
+                  type="button"
+                  onClick={() => {
+                    setQuestion(template.text);
+                    setSelectedTemplateId(template.id);
+                  }}
+                  disabled={loading}
+                >
+                  Use {template.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setQuestion(refineQuestionText(question || ""))}
+              disabled={loading}
+            >
+              Auto-improve now
+            </button>
+          </div>
+        </article>
+      ) : null}
 
       {loading ? <p className="notice">Thinking<span className="loading-dots" aria-hidden="true" /></p> : null}
 
