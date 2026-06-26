@@ -28,6 +28,7 @@ from .schemas import (
     AuthTokenOut,
     KnowledgeIn,
     KnowledgeOut,
+    KnowledgeUploadOut,
     MessageOut,
     OnboardingState,
     OnboardingTurnIn,
@@ -200,18 +201,19 @@ async def add_knowledge(payload: KnowledgeIn, user: dict[str, Any] = Depends(cur
     return KnowledgeOut(**record)
 
 
-@app.post("/api/knowledge/upload", response_model=list[KnowledgeOut])
+@app.post("/api/knowledge/upload", response_model=KnowledgeUploadOut)
 async def upload_knowledge(
     files: list[UploadFile] = File(...),
     user: dict[str, Any] = Depends(current_user),
-) -> list[KnowledgeOut]:
+) -> KnowledgeUploadOut:
     if not files:
         raise HTTPException(status_code=400, detail="No files received.")
     if len(files) > 20:
         raise HTTPException(status_code=400, detail="Upload up to 20 files at a time.")
 
-    output: list[KnowledgeOut] = []
-    failures: list[str] = []
+    reports: list[dict[str, Any]] = []
+    total_entries_created = 0
+    failed_files = 0
 
     for upload in files:
         try:
@@ -220,14 +222,44 @@ async def upload_knowledge(
             payloads = build_knowledge_payloads(parsed)
             for payload in payloads:
                 record = create_knowledge(user["id"], payload)
-                output.append(KnowledgeOut(**record))
+                _ = KnowledgeOut(**record)
+                total_entries_created += 1
+
+            reports.append(
+                {
+                    "file_name": upload.filename or "uploaded-file",
+                    "status": "success",
+                    "entries_created": len(payloads),
+                    "chunks_created": len(payloads),
+                    "extracted_chars": len(parsed.content),
+                    "ocr_used": parsed.ocr_used,
+                    "warning": "; ".join(parsed.warnings)[:500] if parsed.warnings else None,
+                    "error": None,
+                }
+            )
         except Exception as exc:
-            failures.append(f"{upload.filename}: {exc}")
+            failed_files += 1
+            reports.append(
+                {
+                    "file_name": upload.filename or "uploaded-file",
+                    "status": "error",
+                    "entries_created": 0,
+                    "chunks_created": 0,
+                    "extracted_chars": 0,
+                    "ocr_used": False,
+                    "warning": None,
+                    "error": str(exc)[:500],
+                }
+            )
 
-    if not output and failures:
-        raise HTTPException(status_code=400, detail=failures[0])
-
-    return output
+    successful_files = len(files) - failed_files
+    return KnowledgeUploadOut(
+        files=reports,
+        total_files_received=len(files),
+        successful_files=successful_files,
+        failed_files=failed_files,
+        total_entries_created=total_entries_created,
+    )
 
 
 @app.post("/api/knowledge/{knowledge_id}/reembed", response_model=KnowledgeOut)

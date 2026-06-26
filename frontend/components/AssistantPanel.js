@@ -119,6 +119,7 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
   const [uploadFiles, setUploadFiles] = useState([]);
   const [uploadingDocs, setUploadingDocs] = useState(false);
   const [uploadResult, setUploadResult] = useState("");
+  const [uploadReport, setUploadReport] = useState(null);
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState([]);
@@ -270,6 +271,7 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
     setUploadingDocs(true);
     setError("");
     setUploadResult("");
+    setUploadReport(null);
 
     try {
       const form = new FormData();
@@ -293,8 +295,11 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
       }
 
       const body = await res.json().catch(() => []);
-      const importedCount = Array.isArray(body) ? body.length : 0;
-      setUploadResult(`Imported ${importedCount} knowledge entries from ${uploadFiles.length} file(s).`);
+      const importedCount = Number(body?.total_entries_created || 0);
+      const successFiles = Number(body?.successful_files || 0);
+      const totalFiles = Number(body?.total_files_received || uploadFiles.length);
+      setUploadResult(`Imported ${importedCount} knowledge entries from ${successFiles}/${totalFiles} file(s).`);
+      setUploadReport(body && typeof body === "object" ? body : null);
       setUploadFiles([]);
       loadKnowledge();
     } catch {
@@ -422,6 +427,19 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
         </button>
         {uploadResult ? <div className="notice">{uploadResult}</div> : null}
       </form>
+
+      {uploadReport?.files?.length ? (
+        <article className="task-row" style={{ marginTop: 10 }}>
+          <strong>Ingestion report</strong>
+          {uploadReport.files.map((item, idx) => (
+            <div key={`${item.file_name}-${idx}`} className="notice" style={{ marginTop: 4 }}>
+              {item.status === "success" ? "SUCCESS" : "FAILED"} | {item.file_name} | entries {item.entries_created} | chunks {item.chunks_created} | chars {item.extracted_chars} | OCR {item.ocr_used ? "yes" : "no"}
+              {item.warning ? ` | warning: ${item.warning}` : ""}
+              {item.error ? ` | error: ${item.error}` : ""}
+            </div>
+          ))}
+        </article>
+      ) : null}
 
       <form onSubmit={askAssistant} className="controls" style={{ marginTop: 12 }}>
         <input

@@ -47,6 +47,16 @@ CODE_EXTENSIONS = {
     ".scss",
 }
 
+IMAGE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".bmp",
+    ".tif",
+    ".tiff",
+}
+
 
 @dataclass
 class ParsedDocument:
@@ -54,6 +64,8 @@ class ParsedDocument:
     source: str
     content: str
     tags: list[str]
+    warnings: list[str]
+    ocr_used: bool = False
 
 
 def _normalize_whitespace(value: str) -> str:
@@ -93,6 +105,30 @@ def _split_chunks(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
     return chunks
 
 
+def _ocr_image_bytes(image_bytes: bytes) -> str:
+    try:
+        from PIL import Image
+        import pytesseract
+    except Exception:
+        return ""
+
+    try:
+        image = Image.open(BytesIO(image_bytes))
+        return pytesseract.image_to_string(image) or ""
+    except Exception:
+        return ""
+
+
+def _extract_pdf_with_ocr(reader: PdfReader) -> str:
+    extracted: list[str] = []
+    for page in reader.pages:
+        for image in getattr(page, "images", []):
+            text = _ocr_image_bytes(image.data)
+            if text.strip():
+                extracted.append(text)
+    return "\n\n".join(extracted)
+
+
 def parse_document(name: str, content_type: str | None, data: bytes) -> ParsedDocument:
     if not data:
         raise ValueError("File is empty.")
@@ -102,6 +138,8 @@ def parse_document(name: str, content_type: str | None, data: bytes) -> ParsedDo
     suffix = Path(name).suffix.lower()
     stem = Path(name).stem.strip() or "Imported document"
     source = name
+    warnings: list[str] = []
+    ocr_used = False
 
     if suffix == ".pdf":
         reader = PdfReader(BytesIO(data))
@@ -109,12 +147,26 @@ def parse_document(name: str, content_type: str | None, data: bytes) -> ParsedDo
         for page in reader.pages:
             pages.append(page.extract_text() or "")
         content = "\n\n".join(pages)
+        if len(_normalize_whitespace(content)) < 80:
+            ocr_text = _extract_pdf_with_ocr(reader)
+            if ocr_text.strip():
+                content = ocr_text
+                ocr_used = True
+                warnings.append("Text layer was sparse; OCR fallback was used for scanned content.")
+            else:
+                warnings.append("PDF appears image-based and OCR extraction could not recover readable text.")
         tags = ["pdf", "imported"]
     elif suffix == ".docx":
         document = Document(BytesIO(data))
         paragraphs = [p.text for p in document.paragraphs if p.text.strip()]
         content = "\n".join(paragraphs)
         tags = ["docx", "imported"]
+    elif suffix in IMAGE_EXTENSIONS:
+        content = _ocr_image_bytes(data)
+        ocr_used = bool(content.strip())
+        if not ocr_used:
+            warnings.append("Image OCR returned no readable text.")
+        tags = ["image", "ocr", "imported"]
     elif suffix in TEXT_EXTENSIONS or suffix in CODE_EXTENSIONS:
         content = data.decode("utf-8", errors="ignore")
         tags = ["code", "imported"] if suffix in CODE_EXTENSIONS else ["text", "imported"]
@@ -133,6 +185,8 @@ def parse_document(name: str, content_type: str | None, data: bytes) -> ParsedDo
         source=source[:280],
         content=normalized,
         tags=tags,
+        warnings=warnings,
+        ocr_used=ocr_used,
     )
 
 

@@ -156,6 +156,25 @@ class KnowledgeOut(BaseModel):
     created_at: datetime
 
 
+class KnowledgeUploadFileOut(BaseModel):
+    file_name: str
+    status: Literal["success", "error"]
+    entries_created: int = 0
+    chunks_created: int = 0
+    extracted_chars: int = 0
+    ocr_used: bool = False
+    warning: str | None = None
+    error: str | None = None
+
+
+class KnowledgeUploadOut(BaseModel):
+    files: list[KnowledgeUploadFileOut] = Field(default_factory=list)
+    total_files_received: int
+    successful_files: int
+    failed_files: int
+    total_entries_created: int
+
+
 class AssistantQueryIn(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     raw_question: str | None = Field(default=None, max_length=2000)
