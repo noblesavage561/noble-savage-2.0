@@ -158,8 +158,46 @@ class KnowledgeOut(BaseModel):
 
 class AssistantQueryIn(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
+    raw_question: str | None = Field(default=None, max_length=2000)
+    template_id: str | None = Field(default=None, max_length=120)
 
 
 class AssistantQueryOut(BaseModel):
+    query_id: str | None = None
     answer: str
     citations: list[KnowledgeOut] = Field(default_factory=list)
+
+
+class AssistantFeedbackIn(BaseModel):
+    query_id: str = Field(min_length=1, max_length=80)
+    score: Literal[-1, 1]
+    note: str | None = Field(default=None, max_length=300)
+
+
+class AssistantTemplateMetricsOut(BaseModel):
+    template_id: str
+    queries: int
+    avg_citations: float
+    avg_answer_chars: float
+    success_rate: float
+    feedback_count: int
+    avg_feedback_score: float
+    last_used: datetime
+
+
+class AssistantTemplateInsightOut(BaseModel):
+    template_id: str
+    queries: int
+    success_rate: float
+    avg_citations: float
+    feedback_count: int
+    avg_feedback_score: float
+    quality_score: float
+
+
+class AssistantWeeklySummaryOut(BaseModel):
+    window_days: int
+    total_queries: int
+    top_template: AssistantTemplateInsightOut | None = None
+    bottom_template: AssistantTemplateInsightOut | None = None
+    summary: str

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -16,8 +17,11 @@ from .auth import (
 from .assistant_service import query_openrouter
 from .onboarding import handle_turn
 from .schemas import (
+    AssistantFeedbackIn,
     AssistantQueryIn,
     AssistantQueryOut,
+    AssistantTemplateMetricsOut,
+    AssistantWeeklySummaryOut,
     AuthLoginIn,
     AuthRegisterIn,
     AuthTokenOut,
@@ -36,6 +40,7 @@ from .schemas import (
 )
 from .store import (
     create_knowledge,
+    create_assistant_log,
     create_user,
     create_signal,
     create_task,
@@ -44,6 +49,9 @@ from .store import (
     get_onboarding,
     init_db,
     list_tasks,
+    get_assistant_template_metrics,
+    get_assistant_weekly_summary,
+    update_assistant_feedback,
     list_knowledge,
     list_workstreams,
     patch_task,
@@ -208,15 +216,77 @@ async def reembed_knowledge(
 async def assistant_query(
     payload: AssistantQueryIn, user: dict[str, Any] = Depends(current_user)
 ) -> AssistantQueryOut:
-    citations = search_knowledge(user["id"], payload.question, limit=5)
+    started = time.perf_counter()
+    citations: list[dict[str, Any]] = []
+    query_id: str | None = None
     try:
+        citations = search_knowledge(user["id"], payload.question, limit=5)
         answer = await query_openrouter(payload.question, citations)
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        query_id = create_assistant_log(
+            user["id"],
+            {
+                "template_id": payload.template_id,
+                "raw_question": payload.raw_question,
+                "question": payload.question,
+                "citation_count": len(citations),
+                "answer_chars": len(answer),
+                "status": "success",
+                "latency_ms": latency_ms,
+            },
+        )
     except Exception as exc:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        try:
+            create_assistant_log(
+                user["id"],
+                {
+                    "template_id": payload.template_id,
+                    "raw_question": payload.raw_question,
+                    "question": payload.question,
+                    "citation_count": len(citations),
+                    "answer_chars": 0,
+                    "status": "error",
+                    "error": str(exc)[:1000],
+                    "latency_ms": latency_ms,
+                },
+            )
+        except Exception:
+            pass
         raise HTTPException(status_code=503, detail=f"Assistant provider unavailable: {exc}") from exc
     return AssistantQueryOut(
+        query_id=query_id,
         answer=answer,
         citations=[KnowledgeOut(**c) for c in citations],
     )
+
+
+@app.get("/api/assistant/metrics", response_model=list[AssistantTemplateMetricsOut])
+async def assistant_metrics(user: dict[str, Any] = Depends(current_user)) -> list[AssistantTemplateMetricsOut]:
+    rows = get_assistant_template_metrics(user["id"], limit=12)
+    return [AssistantTemplateMetricsOut(**row) for row in rows]
+
+
+@app.get("/api/assistant/metrics/weekly-summary", response_model=AssistantWeeklySummaryOut)
+async def assistant_weekly_summary(user: dict[str, Any] = Depends(current_user)) -> AssistantWeeklySummaryOut:
+    summary = get_assistant_weekly_summary(user["id"], window_days=7)
+    return AssistantWeeklySummaryOut(**summary)
+
+
+@app.post("/api/assistant/feedback", response_model=MessageOut)
+async def assistant_feedback(
+    payload: AssistantFeedbackIn,
+    user: dict[str, Any] = Depends(current_user),
+) -> MessageOut:
+    updated = update_assistant_feedback(
+        user_id=user["id"],
+        log_id=payload.query_id,
+        score=payload.score,
+        note=payload.note,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Assistant query not found")
+    return MessageOut(message="feedback recorded")
 
 
 @app.get("/api/tasks", response_model=list[TaskOut])

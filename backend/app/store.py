@@ -1,7 +1,7 @@
 import json
 import os
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -270,6 +270,28 @@ def init_db() -> None:
                 """
             )
         )
+        conn.execute(
+            text(
+                """
+                create table if not exists assistant_logs (
+                    id text primary key,
+                    user_id text,
+                    ts timestamp default CURRENT_TIMESTAMP,
+                    template_id text,
+                    raw_question text,
+                    question text not null,
+                    citation_count integer default 0,
+                    answer_chars integer default 0,
+                    status text check (status in ('success','error')),
+                    error text,
+                    latency_ms integer,
+                    feedback_score integer,
+                    feedback_note text,
+                    feedback_ts timestamp
+                )
+                """
+            )
+        )
 
     # Ensure tenant columns exist when upgrading older local databases.
     _ensure_column("workstreams", "user_id", "text")
@@ -280,6 +302,18 @@ def init_db() -> None:
     _ensure_column("knowledge", "user_id", "text")
     _ensure_column("knowledge", "embedding", "text")
     _ensure_column("knowledge", "embedding_model", "text")
+    _ensure_column("assistant_logs", "user_id", "text")
+    _ensure_column("assistant_logs", "template_id", "text")
+    _ensure_column("assistant_logs", "raw_question", "text")
+    _ensure_column("assistant_logs", "question", "text")
+    _ensure_column("assistant_logs", "citation_count", "integer")
+    _ensure_column("assistant_logs", "answer_chars", "integer")
+    _ensure_column("assistant_logs", "status", "text")
+    _ensure_column("assistant_logs", "error", "text")
+    _ensure_column("assistant_logs", "latency_ms", "integer")
+    _ensure_column("assistant_logs", "feedback_score", "integer")
+    _ensure_column("assistant_logs", "feedback_note", "text")
+    _ensure_column("assistant_logs", "feedback_ts", "timestamp")
 
 
 def create_user(email: str, password_hash: str, name: str | None) -> dict[str, Any]:
@@ -767,4 +801,206 @@ def update_knowledge_embedding(user_id: str, knowledge_id: str) -> dict[str, Any
         "embedding": json.loads(um["embedding"] or "[]"),
         "embedding_model": um["embedding_model"],
         "created_at": _to_datetime(um["created_at"]),
+    }
+
+
+def create_assistant_log(user_id: str, payload: dict[str, Any]) -> str:
+    log_id = str(uuid.uuid4())
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                insert into assistant_logs (
+                    id,
+                    user_id,
+                    template_id,
+                    raw_question,
+                    question,
+                    citation_count,
+                    answer_chars,
+                    status,
+                    error,
+                    latency_ms
+                )
+                values (
+                    :id,
+                    :user_id,
+                    :template_id,
+                    :raw_question,
+                    :question,
+                    :citation_count,
+                    :answer_chars,
+                    :status,
+                    :error,
+                    :latency_ms
+                )
+                """
+            ),
+            {
+                "id": log_id,
+                "user_id": user_id,
+                "template_id": payload.get("template_id"),
+                "raw_question": payload.get("raw_question"),
+                "question": payload["question"],
+                "citation_count": int(payload.get("citation_count") or 0),
+                "answer_chars": int(payload.get("answer_chars") or 0),
+                "status": payload.get("status") or "success",
+                "error": payload.get("error"),
+                "latency_ms": int(payload.get("latency_ms") or 0),
+            },
+        )
+    return log_id
+
+
+def update_assistant_feedback(
+    user_id: str,
+    log_id: str,
+    score: int,
+    note: str | None = None,
+) -> bool:
+    with engine.begin() as conn:
+        row = conn.execute(
+            text("select id from assistant_logs where id = :id and user_id = :user_id"),
+            {"id": log_id, "user_id": user_id},
+        ).first()
+        if not row:
+            return False
+
+        conn.execute(
+            text(
+                """
+                update assistant_logs
+                set feedback_score = :feedback_score,
+                    feedback_note = :feedback_note,
+                    feedback_ts = :feedback_ts
+                where id = :id and user_id = :user_id
+                """
+            ),
+            {
+                "id": log_id,
+                "user_id": user_id,
+                "feedback_score": score,
+                "feedback_note": note,
+                "feedback_ts": datetime.utcnow(),
+            },
+        )
+    return True
+
+
+def get_assistant_template_metrics(user_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                select
+                    coalesce(template_id, 'unlabeled') as template_id,
+                    count(*) as queries,
+                    avg(citation_count) as avg_citations,
+                    avg(answer_chars) as avg_answer_chars,
+                    100.0 * avg(case when status = 'success' then 1.0 else 0.0 end) as success_rate,
+                    sum(case when feedback_score is not null then 1 else 0 end) as feedback_count,
+                    avg(feedback_score) as avg_feedback_score,
+                    max(ts) as last_used
+                from assistant_logs
+                where user_id = :user_id
+                group by coalesce(template_id, 'unlabeled')
+                order by queries desc, last_used desc
+                limit :limit
+                """
+            ),
+            {"user_id": user_id, "limit": limit},
+        ).all()
+
+    output: list[dict[str, Any]] = []
+    for row in rows:
+        m = row._mapping
+        output.append(
+            {
+                "template_id": m["template_id"],
+                "queries": int(m["queries"] or 0),
+                "avg_citations": float(m["avg_citations"] or 0),
+                "avg_answer_chars": float(m["avg_answer_chars"] or 0),
+                "success_rate": float(m["success_rate"] or 0),
+                "feedback_count": int(m["feedback_count"] or 0),
+                "avg_feedback_score": float(m["avg_feedback_score"] or 0),
+                "last_used": _to_datetime(m["last_used"]),
+            }
+        )
+
+    return output
+
+
+def get_assistant_weekly_summary(user_id: str, window_days: int = 7) -> dict[str, Any]:
+    since = datetime.utcnow() - timedelta(days=window_days)
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                """
+                select
+                    coalesce(template_id, 'unlabeled') as template_id,
+                    count(*) as queries,
+                    avg(citation_count) as avg_citations,
+                    100.0 * avg(case when status = 'success' then 1.0 else 0.0 end) as success_rate,
+                    sum(case when feedback_score is not null then 1 else 0 end) as feedback_count,
+                    avg(feedback_score) as avg_feedback_score
+                from assistant_logs
+                where user_id = :user_id and ts >= :since
+                group by coalesce(template_id, 'unlabeled')
+                having count(*) > 0
+                """
+            ),
+            {"user_id": user_id, "since": since},
+        ).all()
+
+    scored: list[dict[str, Any]] = []
+    total_queries = 0
+    for row in rows:
+        m = row._mapping
+        queries = int(m["queries"] or 0)
+        success_rate = float(m["success_rate"] or 0)
+        avg_citations = float(m["avg_citations"] or 0)
+        avg_feedback_score = float(m["avg_feedback_score"] or 0)
+        feedback_count = int(m["feedback_count"] or 0)
+
+        total_queries += queries
+
+        # Weighted for practical quality: user feedback > reliability > grounding depth.
+        quality_score = (avg_feedback_score * 60.0) + (success_rate * 0.35) + (avg_citations * 3.0)
+
+        scored.append(
+            {
+                "template_id": m["template_id"],
+                "queries": queries,
+                "success_rate": success_rate,
+                "avg_citations": avg_citations,
+                "feedback_count": feedback_count,
+                "avg_feedback_score": avg_feedback_score,
+                "quality_score": round(quality_score, 2),
+            }
+        )
+
+    if not scored:
+        return {
+            "window_days": window_days,
+            "total_queries": 0,
+            "top_template": None,
+            "bottom_template": None,
+            "summary": "No assistant queries recorded in this window.",
+        }
+
+    scored.sort(key=lambda item: item["quality_score"], reverse=True)
+    top = scored[0]
+    bottom = scored[-1]
+
+    summary = (
+        f"Top template is {top['template_id']} (score {top['quality_score']}). "
+        f"Lowest is {bottom['template_id']} (score {bottom['quality_score']})."
+    )
+
+    return {
+        "window_days": window_days,
+        "total_queries": total_queries,
+        "top_template": top,
+        "bottom_template": bottom,
+        "summary": summary,
     }

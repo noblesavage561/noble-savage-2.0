@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { readErrorMessage } from "../lib/apiError";
+
 export default function OnboardingPanel({ token, apiBase, onAuthExpired }) {
   const [turn, setTurn] = useState(null);
   const [answer, setAnswer] = useState("");
@@ -28,8 +30,7 @@ export default function OnboardingPanel({ token, apiBase, onAuthExpired }) {
         return;
       }
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.detail || "Could not continue onboarding.");
+        setError(await readErrorMessage(res, "Could not continue onboarding."));
         return;
       }
       const data = await res.json();
@@ -60,7 +61,7 @@ export default function OnboardingPanel({ token, apiBase, onAuthExpired }) {
         return;
       }
       if (!res.ok) {
-        setError("Could not reset onboarding.");
+        setError(await readErrorMessage(res, "Could not reset onboarding."));
         return;
       }
       await sendTurn(null);

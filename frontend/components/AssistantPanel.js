@@ -2,6 +2,44 @@
 
 import { useEffect, useState } from "react";
 
+import { readErrorMessage, toErrorMessage } from "../lib/apiError";
+
+const PROMPT_TEMPLATES = [
+  {
+    id: "decision-brief",
+    label: "Decision Brief",
+    text:
+      "Goal: [state the decision]\nContext: [key facts from your workstream]\nConstraints: [time, budget, legal, dependencies]\nOptions: [A, B, C]\nOutput format: recommendation, tradeoffs, risk level, and one next action.",
+  },
+  {
+    id: "knowledge-intake",
+    label: "Knowledge Intake",
+    text:
+      "Ingest this into structured notes.\nSource summary: [paste source]\nExtract: key entities, dates, obligations, blockers, and follow-ups.\nOutput format: concise bullets + open questions + action checklist.",
+  },
+  {
+    id: "execution-plan",
+    label: "Execution Plan",
+    text:
+      "Objective: [what must ship]\nCurrent state: [where this is blocked]\nDependencies: [what must happen first]\nOutput format: 72-hour execution sequence, owner per step, and success criteria.",
+  },
+];
+
+function refineQuestionText(raw) {
+  const input = raw.trim();
+  if (!input) return "";
+
+  return [
+    "Use only available knowledge context when answering.",
+    "If context is incomplete, explicitly list the minimum missing facts.",
+    "Response format:",
+    "1) Direct answer in 3-6 bullets",
+    "2) Missing inputs (max 3)",
+    "3) One concrete next action",
+    `User query: ${input}`,
+  ].join("\n");
+}
+
 export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
   const [knowledge, setKnowledge] = useState([]);
   const [title, setTitle] = useState("");
@@ -9,6 +47,12 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [metrics, setMetrics] = useState([]);
+  const [weeklySummary, setWeeklySummary] = useState(null);
+  const [latestQueryId, setLatestQueryId] = useState(null);
+  const [feedbackSent, setFeedbackSent] = useState(0);
+  const [sendingFeedback, setSendingFeedback] = useState(false);
   const [error, setError] = useState("");
   const [loadingKnowledge, setLoadingKnowledge] = useState(false);
   const [addingKnowledge, setAddingKnowledge] = useState(false);
@@ -29,14 +73,62 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
         return;
       }
       if (!res.ok) {
-        setError("Could not load knowledge entries.");
+        setError(await readErrorMessage(res, "Could not load knowledge entries."));
         return;
       }
-      setKnowledge(await res.json());
+      const body = await res.json().catch(() => []);
+      if (!Array.isArray(body)) {
+        setError("Knowledge response was not in the expected format.");
+        setKnowledge([]);
+        return;
+      }
+      setKnowledge(body);
     } catch {
       setError("Could not load knowledge entries.");
     } finally {
       setLoadingKnowledge(false);
+    }
+  }
+
+  async function loadAssistantMetrics() {
+    if (!token || !apiBase) return;
+    try {
+      const res = await fetch(`${apiBase}/api/assistant/metrics`, {
+        headers: { ...authHeaders },
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        onAuthExpired?.();
+        return;
+      }
+      if (!res.ok) {
+        return;
+      }
+      const body = await res.json().catch(() => []);
+      setMetrics(Array.isArray(body) ? body : []);
+    } catch {
+      setMetrics([]);
+    }
+  }
+
+  async function loadWeeklySummary() {
+    if (!token || !apiBase) return;
+    try {
+      const res = await fetch(`${apiBase}/api/assistant/metrics/weekly-summary`, {
+        headers: { ...authHeaders },
+        cache: "no-store",
+      });
+      if (res.status === 401) {
+        onAuthExpired?.();
+        return;
+      }
+      if (!res.ok) {
+        return;
+      }
+      const body = await res.json().catch(() => null);
+      setWeeklySummary(body && typeof body === "object" ? body : null);
+    } catch {
+      setWeeklySummary(null);
     }
   }
 
@@ -46,6 +138,8 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
       return;
     }
     loadKnowledge();
+    loadAssistantMetrics();
+    loadWeeklySummary();
   }, [token, apiBase]);
 
   async function addEntry(e) {
@@ -68,8 +162,7 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
         return;
       }
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.detail || "Could not save knowledge entry.");
+        setError(await readErrorMessage(res, "Could not save knowledge entry."));
         return;
       }
       setTitle("");
@@ -92,10 +185,15 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
     setLoading(true);
     setError("");
     try {
+      const refinedQuestion = refineQuestionText(question);
       const res = await fetch(`${apiBase}/api/assistant/query`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({
+          question: refinedQuestion,
+          raw_question: question.trim(),
+          template_id: selectedTemplateId,
+        }),
       });
       if (res.status === 401) {
         onAuthExpired?.();
@@ -104,17 +202,52 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
 
       const body = await res.json().catch(() => ({}));
       if (res.ok) {
-        setAnswer(body.answer || "");
-        setCitations(body.citations || []);
+        setLatestQueryId(typeof body.query_id === "string" ? body.query_id : null);
+        setFeedbackSent(0);
+        setAnswer(typeof body.answer === "string" ? body.answer : "");
+        setCitations(Array.isArray(body.citations) ? body.citations : []);
+        loadAssistantMetrics();
+        loadWeeklySummary();
       } else {
-        setAnswer(body.detail || "Sorry, I could not process that. Try again.");
+        setLatestQueryId(null);
+        setFeedbackSent(0);
+        setAnswer(toErrorMessage(body?.detail, "Sorry, I could not process that. Try again."));
         setCitations([]);
       }
     } catch {
+      setLatestQueryId(null);
+      setFeedbackSent(0);
       setAnswer("Sorry, I could not process that. Check your connection and try again.");
       setCitations([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function sendFeedback(score) {
+    if (!apiBase || !latestQueryId || sendingFeedback) return;
+    setSendingFeedback(true);
+    try {
+      const res = await fetch(`${apiBase}/api/assistant/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ query_id: latestQueryId, score }),
+      });
+      if (res.status === 401) {
+        onAuthExpired?.();
+        return;
+      }
+      if (!res.ok) {
+        setError(await readErrorMessage(res, "Could not save feedback."));
+        return;
+      }
+      setFeedbackSent(score);
+      loadAssistantMetrics();
+      loadWeeklySummary();
+    } catch {
+      setError("Could not save feedback.");
+    } finally {
+      setSendingFeedback(false);
     }
   }
 
@@ -154,7 +287,33 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
           disabled={loading}
         />
         <button className="primary" type="submit" disabled={loading}>Ask</button>
+        <button
+          type="button"
+          onClick={() => setQuestion(refineQuestionText(question))}
+          disabled={loading || !question.trim()}
+        >
+          Improve wording
+        </button>
       </form>
+
+      <div className="controls" style={{ marginTop: 8, gap: 8, flexWrap: "wrap" }}>
+        {PROMPT_TEMPLATES.map((template) => (
+          <button
+            key={template.id}
+            type="button"
+            onClick={() => {
+              setQuestion(template.text);
+              setSelectedTemplateId(template.id);
+            }}
+            disabled={loading}
+            style={{
+              borderColor: selectedTemplateId === template.id ? "var(--brand)" : undefined,
+            }}
+          >
+            {template.label}
+          </button>
+        ))}
+      </div>
 
       {error ? <p style={{ color: "#dc2626", marginTop: 10 }}>{error}</p> : null}
       {loadingKnowledge ? <p className="notice">Loading knowledge entries...</p> : null}
@@ -163,6 +322,26 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
         <article className="task-row" style={{ marginTop: 10 }}>
           <strong>Assistant answer</strong>
           <div>{answer}</div>
+          {latestQueryId ? (
+            <div className="controls" style={{ marginTop: 8, gap: 8 }}>
+              <button
+                type="button"
+                disabled={sendingFeedback}
+                onClick={() => sendFeedback(1)}
+                style={{ borderColor: feedbackSent === 1 ? "var(--brand)" : undefined }}
+              >
+                Helpful
+              </button>
+              <button
+                type="button"
+                disabled={sendingFeedback}
+                onClick={() => sendFeedback(-1)}
+                style={{ borderColor: feedbackSent === -1 ? "#dc2626" : undefined }}
+              >
+                Not helpful
+              </button>
+            </div>
+          ) : null}
         </article>
       ) : null}
 
@@ -178,6 +357,37 @@ export default function AssistantPanel({ token, apiBase, onAuthExpired }) {
       <div className="notice" style={{ marginTop: 10 }}>
         Stored knowledge entries: {knowledge.length}
       </div>
+
+      {metrics.length ? (
+        <article className="task-row" style={{ marginTop: 10 }}>
+          <strong>Template performance</strong>
+          {metrics.map((item) => (
+            <div key={item.template_id} className="notice">
+              {item.template_id}: {item.queries} queries, {Number(item.success_rate || 0).toFixed(0)}% success,
+              avg citations {Number(item.avg_citations || 0).toFixed(1)},
+              feedback {Number(item.avg_feedback_score || 0).toFixed(2)} ({item.feedback_count} votes)
+            </div>
+          ))}
+        </article>
+      ) : null}
+
+      {weeklySummary?.summary ? (
+        <article className="task-row" style={{ marginTop: 10 }}>
+          <strong>Weekly summary</strong>
+          <div className="notice">{weeklySummary.summary}</div>
+          <div className="notice">Total queries (7d): {weeklySummary.total_queries || 0}</div>
+          {weeklySummary.top_template ? (
+            <div className="notice">
+              Top: {weeklySummary.top_template.template_id} (score {Number(weeklySummary.top_template.quality_score || 0).toFixed(2)})
+            </div>
+          ) : null}
+          {weeklySummary.bottom_template ? (
+            <div className="notice">
+              Lowest: {weeklySummary.bottom_template.template_id} (score {Number(weeklySummary.bottom_template.quality_score || 0).toFixed(2)})
+            </div>
+          ) : null}
+        </article>
+      ) : null}
     </section>
   );
 }

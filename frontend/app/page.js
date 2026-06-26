@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import AssistantPanel from "../components/AssistantPanel";
 import OnboardingPanel from "../components/OnboardingPanel";
 import TaskBoard from "../components/TaskBoard";
+import { readErrorMessage } from "../lib/apiError";
 import { resolveApiBase } from "../lib/apiBase";
 
 export default function Home() {
@@ -46,8 +47,7 @@ export default function Home() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.detail || "Wrong email or password. Try again.");
+        setError(await readErrorMessage(res, "Wrong email or password. Try again."));
         return;
       }
 

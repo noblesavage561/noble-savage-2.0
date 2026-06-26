@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { readErrorMessage } from "../lib/apiError";
+
 const DEFAULT_FORM = {
   ws: "",
   task: "",
@@ -40,7 +42,7 @@ export default function TaskBoard({ token, apiBase, onAuthExpired }) {
         return;
       }
       if (!res.ok) {
-        setError("Could not load tasks.");
+        setError(await readErrorMessage(res, "Could not load tasks."));
         setLoading(false);
         return;
       }
@@ -64,13 +66,14 @@ export default function TaskBoard({ token, apiBase, onAuthExpired }) {
         return;
       }
       if (!res.ok) {
-        setError("Could not load workstreams.");
+        setError(await readErrorMessage(res, "Could not load workstreams."));
         return;
       }
       const data = await res.json();
-      setWorkstreams(data);
-      if (data[0]) {
-        setForm((v) => ({ ...v, ws: data[0].id }));
+      const normalized = Array.isArray(data) ? data : [];
+      setWorkstreams(normalized);
+      if (normalized[0]) {
+        setForm((v) => ({ ...v, ws: normalized[0].id }));
       }
     } catch {
       setError("Could not load workstreams.");
@@ -159,8 +162,7 @@ export default function TaskBoard({ token, apiBase, onAuthExpired }) {
         return;
       }
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setError(body.detail || "Could not create task.");
+        setError(await readErrorMessage(res, "Could not create task."));
         return;
       }
 
@@ -189,7 +191,7 @@ export default function TaskBoard({ token, apiBase, onAuthExpired }) {
         return;
       }
       if (!res.ok) {
-        setError("Could not update task status.");
+        setError(await readErrorMessage(res, "Could not update task status."));
       }
     } catch {
       setError("Could not update task status.");
